@@ -1,0 +1,453 @@
+import pandas as pd
+import numpy as np
+import PySimpleGUI as psg
+from pandas.io.html import read_html
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import re
+import math
+import io
+import os
+from io import StringIO
+from bs4 import BeautifulSoup
+
+os.chdir(r'C:\Users\sdeka\Program\Unclaimed Property')
+
+#imports url and css selector info for state websites, defines global variables
+df_state = pd.read_excel('WebInfo.xlsx', index_col = 'State')
+states = df_state.index.tolist()
+searchStates = []
+searchTerms = []
+data=[]
+def scraperMain():
+    dataName = str(searchTerms[0])
+    for i in range(len(searchStates)):
+
+        #Opens browser and searches for search term in appropriate state website
+        browser.get(df_state.loc[searchStates[i], 'URL'])
+
+        #Searches while you still have more search terms, asks 'Do you want to search again?' at end of loop
+        for t in range(len(searchTerms)):
+
+            #goes to appropriate state website and enters search term
+            
+            while True:
+                if t == 0:
+                    searchBox = WebDriverWait(browser, 5).until(EC.presence_of_element_located((searchStates, 'SearchObject'))) #Finds search box
+                    searchBox.send_keys(searchTerms[t], Keys.ENTER) #searches for input from user
+                    captchaPop = ''
+                    while captchaPop != 'OK': #holds while i solve captcha
+                        captchaPop = psg.popup_ok('Press OK Once CAPTCHA is solved')
+                        break
+            
+                    #Sets dropdown to 80 results
+                    select = browser.find_element(By.CSS_SELECTOR, '#itemsPerPage > option:nth-child(3)')
+                    select.click()
+
+                    break
+                
+                else:
+                    searchBox = WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, '#lastName'))) #Finds search box
+                    searchBox.clear()
+                    searchBox.send_keys(searchTerms[t], Keys.ENTER) #searches for input from user
+                    while captchaPop != 'OK': #holds while i solve captcha
+                        captchaPop = psg.popup_ok('Press OK Once CAPTCHA is solved')
+                    break
+
+                break
+
+            #returns integer values for number of results and pages
+            searchResults = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates[i],'ResultsObject'])
+            numResults = re.compile(r'\d+')
+            mo = int(numResults.search(searchResults.text).group())
+            pages = math.ceil(mo/80)
+
+            #scrapes table on page 1
+            searchResults = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates[i], 'TableObject'])
+            searchResults_html = searchResults.get_attribute('outerHTML')
+            soup = BeautifulSoup(searchResults.get_attribute('outerHTML'), 'html.parser')
+            table =  soup.find('table', attrs = {'class': 'table'})
+            rows = table.find_all('tr')
+            for row in rows[2:]:
+                cols = row.find_all('td')
+                cols = [ele.text.strip() for ele in cols[1:10]]
+                data.append([ele for ele in cols])
+
+            #clicks next and scrapes remaining pages, appends it to the main df
+            for i in range(pages -1):
+                nxt = browser.find_element(By.CSS_SELECTOR, '#topPropertySearchResultsPager > ul > li > [aria-label="Next"]')
+                nxt.send_keys(Keys.ENTER)
+                searchResults = browser.find_element(By.CSS_SELECTOR, '.table')
+                soup = BeautifulSoup(searchResults.get_attribute('outerHTML'), 'html.parser')
+                table =  soup.find('table', attrs = {'class': 'table'})
+                rows = table.find_all('tr')
+                for row in rows[2:]:
+                    cols = row.find_all('td')
+                    cols = [ele.text.strip() for ele in cols[1:10]]
+                    data.append([ele for ele in cols])
+                    
+    df = pd.DataFrame(data)
+    df.columns = ['Owner Name', 'Co-Owner Name', 'Reporting Business Name',
+              'City', 'State', 'Amount', 'Property ID']            
+    remove_regex = re.compile(r'^[^:]+(:)\s+')
+    df = df.replace(remove_regex,"",regex=True)
+    df.set_index('Property ID', inplace = True)
+    with pd.ExcelWriter(dataName + '.xlsx',mode = 'a') as writer:
+        df.to_excel(writer, sheet_name = searchState[i])
+
+def scraperMissingMoney():
+    #Opens browser and searches for search  term on MissingMoney
+    dataName = str(searchTerms[0])
+    browser.get('https://www.missingmoney.com')
+    for t in range(len(searchTerms)):
+        
+        while True:
+                if t == 0:
+                    searchBox = WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, '#lastNameTop'))) #Finds search box
+                    searchBox.send_keys(searchTerms[t], Keys.ENTER) #searches for input from user
+                    captchaPop = ''
+                    while captchaPop != 'OK': #holds while i solve captcha
+                        captchaPop = psg.popup_ok('Press OK Once CAPTCHA is solved')
+                        break
+                
+                    #Sets dropdown to 80 results
+                    select = browser.find_element(By.CSS_SELECTOR, '#itemsPerPage > option:nth-child(3)')
+                    select.click()
+
+                    break
+                    
+                else:
+                    searchBox = WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, '#lastName'))) #Finds search box
+                    searchBox.clear()
+                    searchBox.send_keys(searchTerms[t], Keys.ENTER) #searches for input from user
+                    while captchaPop != 'OK': #holds while i solve captcha
+                        captchaPop = psg.popup_ok('Press OK Once CAPTCHA is solved')
+                        break
+
+                break
+        
+        #returns integer values for number of results and pages
+        searchResults = browser.find_element(By.CSS_SELECTOR, '#search-status > strong:nth-child(1)')
+        numResults = re.compile(r'\d+')
+        mo = int(numResults.search(searchResults.text).group())
+        pages = math.ceil(mo/80)
+        
+        #scrapes table on page 1
+        searchResults = browser.find_element(By.CSS_SELECTOR, '.table')
+        searchResults_html = searchResults.get_attribute('outerHTML')
+        soup = BeautifulSoup(searchResults.get_attribute('outerHTML'), 'html.parser')
+        table =  soup.find('table', attrs = {'class': 'table'})
+        rows = table.find_all('tr')
+        for row in rows[2:]:
+            cols = row.find_all('td')
+            cols = [ele.text.strip() for ele in cols[1:10]]
+            data.append([ele for ele in cols])
+
+        #clicks next and scrapes remaining pages, adds it to the main df
+        for i in range(pages - 1):
+            nxt = WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, '#topPropertySearchResultsPager > ul > li > [aria-label="Next"]'))) #Finds search box
+            nxt.send_keys(Keys.ENTER)
+            searchResults = browser.find_element(By.CSS_SELECTOR, '.table')
+            soup = BeautifulSoup(searchResults.get_attribute('outerHTML'), 'html.parser')
+            table =  soup.find('table', attrs = {'class': 'table'})
+            rows = table.find_all('tr')
+            for row in rows[2:]:
+                cols = row.find_all('td')
+                cols = [ele.text.strip() for ele in cols[1:10]]
+                data.append([ele for ele in cols])
+
+
+    df = pd.DataFrame(data)
+    df.columns = ['Owner Name', 'Co-Owner Name', 'Reporting Business Name',
+                  'Address', 'City', 'State', 'Zip Code', 'Held in?', 'Amount']
+    #removes extraneous strings and sets index
+    remove_regex = re.compile(r'^[^:]+(:)\s+')
+    df = df.replace(remove_regex,"",regex=True)
+    with pd.ExcelWriter(dataName + '.xlsx',mode = 'a') as writer:
+        df.to_excel(writer, sheet_name = 'Data')
+    
+
+def California():
+    pass
+    #Opens browser and searches for search term in appropriate state website
+    browser.get(df_state.loc[searchStates, 'URL'])
+    
+#Searches searches for every entered search term
+    for i in range(len(searchTerms)):
+    
+    #goes to appropriate state website and enters search term
+        while True:
+            if i == 0:
+                captchaPop = ""
+                while captchaPop != 'OK':
+                    captchaPop = psg.popup_ok('Press OK Once CAPTCHA is solved')
+                    break
+                searchBox = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates, 'SearchObject']) #Finds search box
+                searchBox.send_keys(searchTerms, Keys.ENTER) #enters input from user
+                break
+            else:
+                searchBox = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates, 'SecondSearchObject']) #Finds search box
+                searchBox.send_keys(searchTerms, Keys.ENTER) #enters input from user
+            break
+        
+        #returns integer values for number of results and pages
+        
+        searchResults =  WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, (df_state.loc[searchStates, 'ResultsObject']))))
+        numResults = re.compile(r'\d+')
+        mo = int(numResults.search(searchResults.text).group())
+        pages = math.ceil(mo/20)
+    
+        #scrapes table on page 1
+        searchResults = browser.find_element(By.CSS_SELECTOR, 'TableObject')
+        searchResults_html = searchResults.get_attribute('outerHTML')
+        soup = BeautifulSoup(searchResults.get_attribute('outerHTML'), 'html.parser')
+        table =  soup.find('table', attrs = {'class': 'table'})
+        rows = table.find_all('tr')
+        for row in rows[2:]:
+            cols = row.find_all('td')
+            cols = [ele.text.strip() for ele in cols[1:10]]
+            data.append([ele for ele in cols])
+    
+        #clicks next and scrapes remaining pages, appends it to the main df
+        for i in range(pages - 1):
+            nxt = WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, df_state.loc[searchStates, 'NextPageObject'])))
+            nxt.send_keys(Keys.ENTER)
+            searchResults = browser.find_element(By.CSS_SELECTOR, '.table')
+            soup = BeautifulSoup(searchResults.get_attribute('outerHTML'), 'html.parser')
+            table =  soup.find('table', attrs = {'class': 'table'})
+            rows = table.find_all('tr')
+            for row in rows[2:]:
+                cols = row.find_all('td')
+                cols = [ele.text.strip() for ele in cols[1:10]]
+                data.append([ele for ele in cols])
+                    
+    remove_regex = re.compile(r'^[^:]+(:)')
+    df = df.loc[1:, 'Owner Name':'Property ID'].replace(remove_regex,"",regex=True)
+    df.set_index('Property ID', inplace = True)
+
+    with pd.ExcelWriter(dataName + '.xlsx',mode = 'a') as writer:
+        df.to_excel(writer, sheet_name = searchStates)
+
+def Georgia():
+    #Opens browser and searches for search term in appropriate state website
+    browser.get(df_state.loc[searchStates, 'URL'])
+    
+    #Searches searches for every entered search term
+    for t in range(len(searchTerms)):
+    
+        #goes to appropriate state website and enters search term
+        captchaPop = ''
+        while captchaPop != 'OK':
+            captchaPop = psg.popup_ok('Press OK Once CAPTCHA is solved')
+        searchBox = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates, 'SearchObject']) #Finds search box
+        searchBox.send_keys(searchTerms, Keys.ENTER) #enters input from user
+        
+        #returns integer values for number of results and pages
+        searchResults =  WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, (df_state.loc[searchStates, 'ResultsObject']))))
+        numResults = re.compile(r'(\d+)(?!.*\d)')
+        pages = int(numResults.search(searchResults.text).group())
+        clicks = (pages-1)
+        
+        #scrapes table on page 1
+        searchResults = browser.find_element(By.CSS_SELECTOR,(df_state.loc[searchStates, 'TableObject']))
+        searchResults_html = searchResults.get_attribute('outerHTML')
+        searchResultsIO = io.StringIO(searchResults_html)
+        searchResultsdf = pd.read_html(searchResultsIO)
+        df = searchResultsdf[0]
+        
+        #clicks next and scrapes remaining pages, appends it to the main df
+        for c in range(clicks):
+            nxt = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates, 'NextPageObject'])
+            nxt.send_keys(Keys.ENTER)
+            searchTable = WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR,(df_state.loc[searchStates, 'TableObject']))))
+            searchTable_html = searchTable.get_attribute('outerHTML')
+            searchTableIO = io.StringIO(searchTable_html)
+            searchTabledf = pd.read_html(searchTableIO)
+            pagedf = searchTabledf[0]
+            df = pd.concat([df,pagedf[1:]], ignore_index=True)
+                    
+    remove_regex = re.compile(r'^[^:]+(:)')
+    df = df.loc[1:, 'Owner Name':'Property ID'].replace(remove_regex,"",regex=True)
+    df.set_index('Property ID', inplace = True)
+
+
+    with pd.ExcelWriter(dataName + '.xlsx',mode = 'a') as writer:
+        df.to_excel(writer, sheet_name = searchStates)
+
+def Kentucky():
+    #Opens browser and searches for search term in appropriate state website
+    browser.get(df_state.loc[searchStates, 'URL'])
+    
+    #Searches searches for every entered search term
+    for t in range(len(searchTerms)):
+    
+        #goes to appropriate state website and enters search term
+        captchaPop = ''
+        while captchaPop != 'OK':
+            captchaPop = psg.popup_ok('Press OK Once CAPTCHA is solved')
+        searchBox = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates, 'SearchObject']) #Finds search box
+        searchBox.send_keys(searchTerms, Keys.ENTER) #enters input from user
+        
+        #returns integer values for number of results and pages
+        searchResults =  WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, (df_state.loc[searchStates, 'ResultsObject']))))
+        numResults = re.compile(r'(\d+)(?!.*\d)')
+        pages = int(numResults.search(searchResults.text).group())
+        clicks = (pages-1)
+        
+        #scrapes table on page 1
+        searchResults = browser.find_element(By.CSS_SELECTOR,(df_state.loc[searchStates, 'TableObject']))
+        searchResults_html = searchResults.get_attribute('outerHTML')
+        searchResultsIO = io.StringIO(searchResults_html)
+        searchResultsdf = pd.read_html(searchResultsIO)
+        df = searchResultsdf[0]
+        
+        #clicks next and scrapes remaining pages, appends it to the main df
+        for c in range(clicks):
+            nxt = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates, 'NextPageObject'])
+            nxt.send_keys(Keys.ENTER)
+            searchTable = WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR,(df_state.loc[searchStates, 'TableObject']))))
+            searchTable_html = searchTable.get_attribute('outerHTML')
+            searchTableIO = io.StringIO(searchTable_html)
+            searchTabledf = pd.read_html(searchTableIO)
+            pagedf = searchTabledf[0]
+            df = pd.concat([df,pagedf[1:]], ignore_index=True)
+                    
+    remove_regex = re.compile(r'^[^:]+(:)')
+    df = df.loc[1:, 'Owner Name':'Property ID'].replace(remove_regex,"",regex=True)
+    df.set_index('Property ID', inplace = True)
+
+
+    with pd.ExcelWriter(dataName + '.xlsx',mode = 'a') as writer:
+        df.to_excel(writer, sheet_name = searchStates)
+
+def Hawaii():
+    #goes to state website
+    browser.get(df_state.loc[searchStates, 'URL'])
+    
+    for t in range(len(searchTerms)):
+    
+        #enters search term
+        captchaPop = ''
+        while captchaPop != 'OK':
+            captchaPop = psg.popup_ok('Press OK Once CAPTCHA is solved')
+        searchBox = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates, 'SearchObject']) #Finds search box
+        searchBox.send_keys(searchTerms, Keys.ENTER) #enters input from user
+
+        searchResults = browser.find_element(By.CSS_SELECTOR,(df_state.loc[searchStates, 'TableObject']))
+        searchResults_html = searchResults.get_attribute('outerHTML')
+        searchResultsIO = io.StringIO(searchResults_html)
+        searchResultsdf = pd.read_html(searchResultsIO)
+        df = searchResultsdf[0]
+        
+    remove_regex = re.compile(r'^[^:]+(:)')
+    df = df.loc[1:, 'Owner Name':'Property ID'].replace(remove_regex,"",regex=True)
+    df.set_index('Property ID', inplace = True)
+
+
+    with pd.ExcelWriter(dataName + '.xlsx',mode = 'a') as writer:
+        df.to_excel(writer, sheet_name = searchStates)
+
+def Missouri():
+    #goes to state website
+    browser.get(df_state.loc[searchStates, 'URL'])
+    businessItem = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates, 'SubmitButton'])
+    businessItem.click()
+    
+    for t in range(len(searchTerms)):
+    
+        #enters search term
+        captchaPop = ''
+        while captchaPop != 'OK':
+            captchaPop = psg.popup_ok('Press OK Once CAPTCHA is solved')
+        searchBox = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates, 'SearchObject']) #Finds search box
+        searchBox.send_keys(searchTerms, Keys.ENTER) #enters input from user
+
+        searchResults = browser.find_element(By.CSS_SELECTOR,(df_state.loc[searchStates, 'TableObject']))
+        searchResults_html = searchResults.get_attribute('outerHTML')
+        searchResultsIO = io.StringIO(searchResults_html)
+        searchResultsdf = pd.read_html(searchResultsIO)
+        df = searchResultsdf[0]
+        
+        #clicks next and scrapes remaining pages, appends it to the main df
+        for c in range(clicks):
+            nxt = browser.find_element(By.CSS_SELECTOR, df_state.loc[searchStates, 'NextPageObject'])
+            nxt.send_keys(Keys.ENTER)
+            searchTable = WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR,(df_state.loc[searchStates, 'TableObject']))))
+            searchTable_html = searchTable.get_attribute('outerHTML')
+            searchTableIO = io.StringIO(searchTable_html)
+            searchTabledf = pd.read_html(searchTableIO)
+            pagedf = searchTabledf[0]
+            df = pd.concat([df,pagedf[1:]], ignore_index=True)
+            
+    with writer:
+        df.to_excel(writer, sheet_name = searchStates)
+
+
+
+#PROGRAM ACTUALLY RUNS STARTING HERE
+
+#defines windows, opens search window and reads input
+lst = psg.Combo(states, font=('Arial', 14),  expand_x=True, enable_events=True,  readonly=False, key='-COMBO-',default_value = 'Select States')
+search = psg.Multiline(default_text='Enter search terms here:',autoscroll = True, key = '-SEARCH-', size=(None, 5))
+pickApp = psg.OptionMenu(['Missing Money', 'State-Specific'], default_value='Missing Money', key='-OPTION MENU-')
+layout = [[pickApp],[search],[lst,
+   psg.Button('Add'),
+   psg.Button('Remove')], [psg.Text("", key='-MSG-',
+      font=('Arial Bold', 14),
+      justification='center')] ,[psg.Button('Search'),psg.Button('Exit')]]
+searchWindow = psg.Window('Unclaimed Property', layout, size=(715, 270))
+while True:
+   event, values = searchWindow.read()
+   print(event, values)
+   if event in (psg.WIN_CLOSED, 'Exit'):
+      exit()
+   if event == 'Add':
+      if values['-COMBO-'] in searchStates:
+          continue
+      searchStates.append(values['-COMBO-'])
+      searchWindow['-COMBO-'].update(values=states, value=values['-COMBO-'])
+      msg = 'You have selected the following states: ' + str(', '.join(searchStates))
+      searchWindow['-MSG-'].update(msg)
+   if event == 'Remove':
+      ch = psg.popup_yes_no("Do you want to remove this state?", title="YesNo")
+      if ch == 'Yes':
+          val = values['-COMBO-']
+          searchStates.remove(val)
+          searchWindow['-COMBO-'].update(values=states, value=' ')
+          msg = 'You have selected the following states: ' + str(', '.join(searchStates))
+          searchWindow['-MSG-'].update(msg)
+   if event == 'Search':        
+       searchTerms = values['-SEARCH-'].splitlines()
+       appSelection = values['-OPTION MENU-']
+       break
+searchWindow.close()
+#opens browser
+browser = webdriver.Firefox()
+#actual search/scrape process
+dataName = str(searchTerms[0])
+path = (os.getcwd() + '/' + dataName + '.xlsx')
+if appSelection == 'State-Specific':
+    for s in range(len(searchStates)):
+    
+        if searchStates[s] in ['Alabama', 'Alaska', 'Arizona', 'Arkansas', 'Colorado', 'Connecticut', 'Delaware',
+                          'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Louisiana', 'Maine', 'Massachusetts',
+                          'Michigan', 'Minnesota', 'Mississippi', 'Nebraska', 'New Hampshire' 'New Jersey', 'North Carolina',
+                          'North Dakota', 'Ohio', 'Oregon', 'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee',
+                          'Texas', 'Utah', 'Virginia', 'Washington', 'Wyoming']:
+            scraperMain()
+        elif searchStates[s] == 'California':
+            California()
+        elif searchStates[s] == 'Georgia' or 'New Mexico':
+            Georgia()
+        elif searchStates[s] == 'Hawaii':
+            Hawaii()
+        elif searchStates[s] == 'Missouri' or 'Vermont':
+            Missori()
+elif appSelection == 'Missing Money':
+    scraperMissingMoney()
+print('Done! You can find your file at ' + path)
+browser.close()
+os.system('start EXCEL.EXE ' + dataName + '.xlsx')
