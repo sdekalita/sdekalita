@@ -1,0 +1,6 @@
+import pandas as pd
+list = [1, 2, 3, 4 ,5]
+df = pd.DataFrame(list)
+pd.ExcelWriter('test.xlsx') #works
+with pd.ExcelWriter('test.xlsx', mode = 'a') as writer:
+    df.to_excel(writer, sheet_name = 'Hello') #does not work
